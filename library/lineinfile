@@ -2,26 +2,25 @@
 #
 # lineinfile module - assures that a line exists in a file
 #
-# Much as the file module assures that a file exists in the filesystem, this module
-# extends the same semantics to one line within one file. You specify the filename,
-# the regular expression which "identifies" the line (much as the filename identifies
-# the file), and the value that the line must have (much as you specify the contents
-# of the file). Just as the file module allows an administrator to control individual
-# files in the filesystem while leaving the remaining files uncontrolled, the line
-# modules allows an administrator to control individual lines in a file while leaving
-# the remaining lines uncontrolled.
+# Summary:
+#  Use lineinfile to assure that a line exists (or does not exist) in a file. It will do one
+#  of three things:
+#   1) insert a line into a predetermined position in a file
+#   2) remore a line from a file
+#   3) replace a line in a file without changing its position within the file
+#  This module will not create a file which does not exist. It does not care about symlinks.
+#  It simply opens the file for reading and write (as necessary).
 #
 # Parameters:
-#  destfile: Required: Absolute path of the file on the filesystem
-#  regexp: Required: Regular expression which matches the line in the file (if the line is present). 
+#  destfile: Required: Absolute path of the file on which to operate
+#  regexp: Required: Regular expression which matches the line in the file (when the line is present). 
 #          You should write a regular expression which matches exactly one line if the
-#          line is present in the file or zero lines if the line is absent from the file.
+#          line is present in the file, or zero lines if the line is absent from the file.
 #  state: Required: Either "present" or "absent"
 #  value: The exact value of the line which should exist in the file (not a regular expression). 
 #         Required if state == present
-#  insertafter: when inserting the value, insert it after this regular expression (has no effect when
-#               testing for the presence or absence of the line). 
-#               Required if state == present
+#  insertafter: when inserting the value, insert it after this regular expression
+#               Required if state == present but used only when inserting the value, not when replacing
 #               Value must be one of the following:
 #               BOF == beginning of file
 #               EOF == end of file
@@ -34,11 +33,23 @@
 #
 #  dest=/etc/apache2/httpd.conf regexp="^SSLCipherSuite " value="SSLCipherSuite ALL:!aNULL:!ADH:!eNULL:!LOW:!EXP:RC4+RSA:+HIGH:+MEDIUM" state=present insertafter=EOF
 #  Assures that a defined set of ciphers is enabled in Apache.
-
+#
+# Background:
+#  Much as the file module assures that a file exists in the filesystem, this module
+#  extends the same semantics to one line within one file. You specify the filename,
+#  the regular expression which "identifies" the line (much as the filename identifies
+#  the file), and the value that the line must have (much as you specify the contents
+#  of the file). Just as the file module allows an administrator to control individual
+#  files in the filesystem while leaving the remaining files uncontrolled, the lineinfile
+#  module allows an administrator to control individual lines in a file while leaving
+#  the remaining lines uncontrolled.
+#
+#
 # This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 Unported License.
 # http://creativecommons.org/licenses/by-sa/3.0/
 #
 # Written by Art Zemon, Hen's Teeth Network, Inc., art@hens-teeth.net
+#
 
 import os
 import re
@@ -46,7 +57,6 @@ import shlex
 import sys
 import syslog
 import traceback
-
 try:
     import json
 except ImportError:
