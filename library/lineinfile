@@ -122,6 +122,29 @@ def removeLine(pattern, lines, destfile):
                 lineHasBeenRemoved = True
     f.close()
 
+def replaceLine(pattern, lines, destfile, value):
+    '''replace a line in the file'''
+    replaced = False
+    f = open(destfile, 'w')
+    # find the first line that matches insertafter and insert the new line after it
+    lineHasBeenReplaced = False
+    for line in lines:
+        if lineHasBeenReplaced:
+            f.write(line)
+        else:
+            result = pattern.search(line)
+            if None == result:
+                f.write(line)
+            else:
+                # first match of the pattern
+                value = value + "\n"
+                if line != value:
+                    replaced = True
+                f.write(value)
+                lineHasBeenReplaced = True
+    f.close()
+    return replaced
+
 # ===========================================
 
 argfile = sys.argv[1]
@@ -172,6 +195,12 @@ try:
         addLine(lines, destfile, value, insertafter)
         result['msg'] = 'line added'
         result['changed'] = True
+    elif 'present' == state and True == present:
+        result['changed'] = replaceLine(pattern, lines, destfile, value)
+        if result['changed']:
+            result['msg'] = 'line replaced'
+        else:
+            result['msg'] = 'no change'
     else:
         result['msg'] = 'no change'
         result['changed'] = False
