@@ -1,0 +1,181 @@
+#!/usr/bin/python
+#
+# lineinfile module - assures that a line exists in a file
+#
+# Much as the file module assures that a file exists in the filesystem, this module
+# extends the same semantics to one line within one file. You specify the filename,
+# the regular expression which "identifies" the line (much as the filename identifies
+# the file), and the value that the line must have (much as you specify the contents
+# of the file). Just as the file module allows an administrator to control individual
+# files in the filesystem while leaving the remaining files uncontrolled, the line
+# modules allows an administrator to control individual lines in a file while leaving
+# the remaining lines uncontrolled.
+#
+# Parameters:
+#  destfile: Required: Absolute path of the file on the filesystem
+#  regexp: Required: Regular expression which matches the line in the file (if the line is present). 
+#          You should write a regular expression which matches exactly one line if the
+#          line is present in the file or zero lines if the line is absent from the file.
+#  state: Required: Either "present" or "absent"
+#  value: The exact value of the line which should exist in the file (not a regular expression). 
+#         Required if state == present
+#  insertafter: when inserting the value, insert it after this regular expression (has no effect when
+#               testing for the presence or absence of the line). 
+#               Required if state == present
+#               Value must be one of the following:
+#               BOF == beginning of file
+#               EOF == end of file
+#               any other value is a regular expression
+#
+# Examples:
+#  dest=/etc/hosts regexp="^127.0.0.1 " value="127.0.0.1 localhost localhost.localdomain" state=present insertafter=BOF
+#  Assures that /etc/hosts has a correct line for localhost. It would, for instance, fix a line which
+#  read only "127.0.0.1 localhost", adding "localhost.localdomain" to the end of the line.
+#
+#  dest=/etc/apache2/httpd.conf regexp="^SSLCipherSuite " value="SSLCipherSuite ALL:!aNULL:!ADH:!eNULL:!LOW:!EXP:RC4+RSA:+HIGH:+MEDIUM" state=present insertafter=EOF
+#  Assures that a defined set of ciphers is enabled in Apache.
+
+# This work is licensed under a Creative Commons Attribution-ShareAlike 3.0 Unported License.
+# http://creativecommons.org/licenses/by-sa/3.0/
+#
+# Written by Art Zemon, Hen's Teeth Network, Inc., art@hens-teeth.net
+
+import os
+import re
+import shlex
+import sys
+import syslog
+import traceback
+
+try:
+    import json
+except ImportError:
+    import simplejson as json
+
+def dump_kv(vars):
+    vars['traceback'] = traceback.format_exc()
+    return json.dumps(vars)
+
+def exit_kv(rc=0, **kwargs):
+    print dump_kv(kwargs)
+    sys.exit(rc)
+
+def fail_kv(**kwargs):
+    kwargs['failed'] = True
+    exit_kv(rc=1, **kwargs)
+
+def addLine(lines, destfile, value, insertafter):
+    '''add a line "value" to a file, inserting it after regex insertafter'''
+    f = open(destfile, 'w')
+    if 'BOF' == insertafter:
+        # insert the line at the beginning of the file
+        f.write(value + "\n")
+        for line in lines:
+            f.write(line)
+    elif 'EOF' == insertafter:
+        # insert the line at the end of the file
+        for line in lines:
+            f.write(line)
+        f.write(value + "\n")
+    else:
+        # find the first line that matches insertafter and insert the new line after it
+        lineHasBeenInserted = False
+        pattern = re.compile(insertafter)
+        for line in lines:
+            if lineHasBeenInserted:
+                f.write(line)
+            else:
+                result = pattern.search(line)
+                if None == result:
+                    f.write(line)
+                else:
+                    # first match of the pattern. write this line then do the insert
+                    f.write(line)
+                    f.write(value + "\n")
+                    lineHasBeenInserted = True
+    f.close()
+
+
+def isPresent(pattern, lines):
+    '''check for presence of regexp in lines'''
+    for line in lines:
+        result = pattern.search(line)
+        if None != result:
+            # this line matches
+            return True
+    # none of the lines matched
+    return False
+
+def removeLine(pattern, lines, destfile):
+    '''remove a line from the file'''
+    lineHasBeenRemoved = False
+    f = open(destfile, "w")
+    for line in lines:
+        if lineHasBeenRemoved:
+            f.write(line)
+        else:
+            result = pattern.search(line)
+            if None == result:
+                f.write(line)
+            else:
+                # first match oof the pattern, skip/remove this line
+                lineHasBeenRemoved = True
+    f.close()
+
+# ===========================================
+
+argfile = sys.argv[1]
+args    = open(argfile, 'r').read()
+items   = shlex.split(args)
+syslog.openlog('ansible-%s' % os.path.basename(__file__))
+syslog.syslog(syslog.LOG_NOTICE, 'Invoked with %s' % args)
+
+if not len(items):
+    fail_kv(msg='the module requires arguments -a')
+    sys.exit(1)
+
+params = {}
+for x in items:
+    (k, v) = x.split("=")
+    params[k] = v
+
+try:
+    destfile = params['destfile']
+    regexp = params['regexp']
+    state = params['state']
+except KeyError:
+    fail_kv(msg='destfile or regesp or state is missing')
+
+if 'present' == state:
+    try:
+        value = params['value']
+        insertafter = params['insertafter']
+    except:
+        fail_kv(msg='insertafter or value is missing when state == present')
+elif 'absent' != state:
+    fail_kv(msg='illegal state. must be either "prresent" or "absent"')
+
+try:
+    lines = open(destfile, 'rb').readlines()
+except IOError:
+    fail_kv(msg='Cannot read destfile %s' % destfile)
+
+pattern = re.compile(regexp)
+present = isPresent(pattern, lines)
+result = {}
+try:
+    if 'absent' == state and True == present:
+        removeLine(pattern, lines, destfile)
+        result['msg'] = 'line removed'
+        result['changed'] = True
+    elif 'present' == state and False == present:
+        addLine(lines, destfile, value, insertafter)
+        result['msg'] = 'line added'
+        result['changed'] = True
+    else:
+        result['msg'] = 'no change'
+        result['changed'] = False
+except IOError:
+    fail_kv(msg='Cannot write destfile %s' % destfile)
+
+print json.dumps(result)
