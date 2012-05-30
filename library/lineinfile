@@ -169,7 +169,7 @@ if not len(items):
 
 params = {}
 for x in items:
-    (k, v) = x.split("=")
+    (k, v) = x.split("=", 1)
     params[k] = v
 
 try:
