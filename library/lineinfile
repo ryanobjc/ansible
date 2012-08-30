@@ -177,7 +177,7 @@ try:
     regexp = params['regexp']
     state = params['state']
 except KeyError:
-    fail_kv(msg='destfile or regesp or state is missing')
+    fail_kv(msg='destfile or regexp or state is missing')
 
 if 'present' == state:
     try:
